@@ -74,13 +74,16 @@ def compute_percentages(mass_by_element, total_mass, elements):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--items-file', default='items.json')
-    parser.add_argument('--recipes-file', default='recipes.json')
-    parser.add_argument('--target', type=float, default=2016.0)
-    parser.add_argument('--allowance', type=float, default=100.0)
-    parser.add_argument('--max-types', type=int, default=4)
-    parser.add_argument('--top', type=int, default=10)
-    parser.add_argument('--prefer-overshoot', action='store_true')
+    parser.add_argument('--items-file', default='items.json', help='Path to items JSON (default: items.json)')
+    parser.add_argument('--recipes-file', default='recipes.json', help='Path to recipes JSON (default: recipes.json)')
+    parser.add_argument('-t', '--target', '--target-mb', dest='target', type=float, help='Target mass in mb')
+    parser.add_argument('--allowance', type=float, default=100.0, help='Allowed +/- mass tolerance (default: 100)')
+    parser.add_argument('--max-types', type=int, default=4, help='Max distinct item types to use (default: 4)')
+    parser.add_argument('--top', type=int, default=1, help='How many top solutions to print (default: 1)')
+    # prefer_overshoot default True; provide --no-prefer-overshoot to disable
+    parser.add_argument('--prefer-overshoot', dest='prefer_overshoot', action='store_true', help='Prefer overshooting the target (default: enabled)')
+    parser.add_argument('--no-prefer-overshoot', dest='prefer_overshoot', action='store_false', help='Do not prefer overshoot')
+    parser.set_defaults(prefer_overshoot=True)
     parser.add_argument('--add-item', action='append', help="Add single-element item: 'Name,mass,available,Element' (can be repeated)")
     parser.add_argument('--recipe', help="Inline recipe bounds: Cu:0.50-0.65;Zn:0.20-0.30;Bi:0.10-0.20")
     parser.add_argument('--target-recipe', help='Name of recipe in recipes file to use')
@@ -140,6 +143,9 @@ def main():
                     return
                 if pos == len(combo_sorted):
                     if curr_mass < MIN_TOTAL or curr_mass > MAX_TOTAL:
+                        return
+                    # avoid division by zero for empty selections
+                    if curr_mass <= 0.0:
                         return
                     perc = compute_percentages(mass_by_element, curr_mass, elements)
                     ok = True
