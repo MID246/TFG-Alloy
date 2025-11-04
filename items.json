@@ -1,0 +1,10 @@
+[
+  {"name": "Purified Copper Ore", "metal": "Cu", "mb": 100, "count": 27},
+  {"name": "Purified Chalcopyrite Ore", "metal": "Cu", "mb": 84, "count": 81},
+  {"name": "Small Pile of Chalcopyrite Dust", "metal": "Cu", "mb": 30, "count": 84},
+  {"name": "Small Pile of Copper Dust", "metal": "Cu", "mb": 36, "count": 17},
+  {"name": "Small Pile of Tetrahedrite Dust", "metal": "Cu", "mb": 31, "count": 16},
+  {"name": "Small Pile of Bismuth Dust", "metal": "Bi", "mb": 36, "count": 31},
+  {"name": "Purified Sphalerite Ore", "metal": "Zn", "mb": 90, "count": 41},
+  {"name": "Small Pile of Sphalerite Dust", "metal": "Zn", "mb": 31, "count": 28}
+]
