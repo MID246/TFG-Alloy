@@ -1,95 +1,226 @@
+"""
+Alloy material calculator.
+
+Features added:
+- Loads items from a JSON file (`items.json`). Items can contain per-element composition.
+- Loads named recipes from a JSON file (`recipes.json`) and/or accept inline CLI recipe definitions.
+- CLI options to add single-element items at runtime.
+- Heavily prefer overshooting (can be toggled with --prefer-overshoot).
+
+Run examples:
+  python alloy_calc.py --items-file items.json --recipes-file recipes.json --target-recipe bismuth_bronze --prefer-overshoot
+
+Item JSON format (array of objects):
+  [
+    {"name":"Purified Copper Ore","mass_mb":100,"available":27,"composition":{"Cu":1.0}},
+    ...
+  ]
+
+Recipe JSON format (object):
+  {"bismuth_bronze": {"Cu": [0.50,0.65], "Zn": [0.20,0.30], "Bi": [0.10,0.20]}}
+
+"""
+
+import argparse
 import json
+import os
 from itertools import combinations
 
-def load_items(path="items.json"):
-    with open(path, "r") as f:
+
+def load_items(path):
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    items = []
+    for it in data:
+        name = it.get('name')
+        mass = float(it.get('mass_mb'))
+        available = int(it.get('available', 0))
+        comp = it.get('composition', {})
+        # normalize composition to sum to 1 if numeric
+        total_frac = sum(comp.values()) if comp else 0
+        if total_frac > 0:
+            comp = {k: float(v) / total_frac for k, v in comp.items()}
+        items.append({'name': name, 'mass': mass, 'available': available, 'comp': comp})
+    return items
+
+
+def load_recipes(path):
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def get_ranges():
-    print("Enter metal composition ranges (fractions or percentages).")
-    print("Example: Cu 50-65, Zn 20-30, Bi 10-20")
-    ranges = {}
-    while True:
-        entry = input("Metal range (or blank to finish): ").strip()
-        if not entry:
-            break
-        try:
-            metal, rng = entry.split()
-            low, high = [float(x.strip("%"))/100 for x in rng.split("-")]
-            ranges[metal.capitalize()[:2]] = (low, high)
-        except Exception:
-            print("Invalid format. Try again (e.g. Cu 50-65).")
-    return ranges
 
-def search_alloys(items, target, ranges):
-    metals = set(ranges.keys())
-    min_req = {m: ranges[m][0]*target for m in metals}
-    max_req = {m: ranges[m][1]*target for m in metals}
+def parse_recipe_string(s):
+    # Format: Cu:0.50-0.65;Zn:0.20-0.30;Bi:0.10-0.20
+    bounds = {}
+    if not s:
+        return bounds
+    parts = s.split(';')
+    for p in parts:
+        if not p.strip():
+            continue
+        k, rng = p.split(':')
+        lo, hi = rng.split('-')
+        bounds[k.strip()] = (float(lo), float(hi))
+    return bounds
 
-    solutions = []
 
-    def backtrack(combo, i, current, totals, total_mb):
-        if i == len(combo):
-            if all(min_req[m] <= totals[m] <= max_req[m] for m in metals):
-                # Prefer overshoot: penalize undershoot more heavily
-                if total_mb < target:
-                    diff = (target - total_mb) * 10  # strong penalty for undershooting
-                else:
-                    diff = total_mb - target  # smaller penalty for overshoot
-                solutions.append((combo.copy(), current.copy(), total_mb, totals.copy(), diff))
-            return
+def compute_percentages(mass_by_element, total_mass, elements):
+    return {el: (mass_by_element.get(el, 0.0) / total_mass) for el in elements}
 
-        name, metal, mb, count = combo[i]
-        if metal not in metals:
-            backtrack(combo, i+1, current, totals, total_mb)
-            return
-
-        for c in range(count+1):
-            new_totals = totals.copy()
-            new_totals[metal] += c * mb
-            new_total_mb = total_mb + c * mb
-
-            # pruning
-            if new_total_mb > target * 1.5:
-                break  # prune far overshoots
-
-            if i == len(combo) - 1 and new_total_mb < target:
-                continue  # don't keep undershoot results
-
-            if any(new_totals[m] > max_req[m] for m in metals):
-                break
-
-            current[i] = c
-            backtrack(combo, i+1, current, new_totals, new_total_mb)
-            current[i] = 0
-
-    # combos of 3–4 items (can increase upper bound if needed)
-    for r in range(1, 5):
-        for combo in combinations(items, r):
-            if metals.issubset(set(i["metal"] for i in combo)):
-                backtrack(combo, 0, [0]*len(combo), {m: 0 for m in metals}, 0)
-
-    return sorted(solutions, key=lambda s: s[4])
 
 def main():
-    items = load_items()
-    target = float(input("Target total mb: "))
-    ranges = get_ranges()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--items-file', default='items.json')
+    parser.add_argument('--recipes-file', default='recipes.json')
+    parser.add_argument('--target', type=float, default=2016.0)
+    parser.add_argument('--allowance', type=float, default=100.0)
+    parser.add_argument('--max-types', type=int, default=4)
+    parser.add_argument('--top', type=int, default=10)
+    parser.add_argument('--prefer-overshoot', action='store_true')
+    parser.add_argument('--add-item', action='append', help="Add single-element item: 'Name,mass,available,Element' (can be repeated)")
+    parser.add_argument('--recipe', help="Inline recipe bounds: Cu:0.50-0.65;Zn:0.20-0.30;Bi:0.10-0.20")
+    parser.add_argument('--target-recipe', help='Name of recipe in recipes file to use')
+    args = parser.parse_args()
 
-    print("\nSearching for valid combinations...\n")
-    sols = search_alloys(items, target, ranges)
+    items = load_items(args.items_file)
+    recipes = load_recipes(args.recipes_file)
 
-    if not sols:
-        print("No valid combinations found.")
+    # process add-item CLI
+    if args.add_item:
+        for s in args.add_item:
+            parts = [p.strip() for p in s.split(',')]
+            if len(parts) >= 4:
+                name = parts[0]
+                mass = float(parts[1])
+                available = int(parts[2])
+                elem = parts[3]
+                items.append({'name': name, 'mass': mass, 'available': available, 'comp': {elem: 1.0}})
+            else:
+                print(f"Ignored malformed --add-item entry: {s}")
+
+    TARGET_MB = args.target
+    ALLOWANCE_MB = args.allowance
+    MIN_TOTAL = TARGET_MB - ALLOWANCE_MB
+    MAX_TOTAL = TARGET_MB + ALLOWANCE_MB
+
+    # Choose composition bounds
+    if args.target_recipe:
+        if args.target_recipe in recipes:
+            COMPOSITION_BOUNDS = {k: tuple(v) for k, v in recipes[args.target_recipe].items()}
+        else:
+            print(f"Recipe '{args.target_recipe}' not found in {args.recipes_file}. Exiting.")
+            return
+    elif args.recipe:
+        COMPOSITION_BOUNDS = parse_recipe_string(args.recipe)
+    else:
+        # default bismuth bronze
+        COMPOSITION_BOUNDS = {'Cu': (0.50, 0.65), 'Zn': (0.20, 0.30), 'Bi': (0.10, 0.20)}
+
+    elements = sorted(list({e for e in COMPOSITION_BOUNDS.keys()}))
+
+    # Build item index list
+    ITEMS = items
+    item_index = list(range(len(ITEMS)))
+
+    best_solutions = []
+
+    # DFS search over combinations of up to max types
+    for r in range(1, args.max_types + 1):
+        for combo in combinations(item_index, r):
+            # order by mass desc for pruning
+            combo_sorted = sorted(combo, key=lambda i: -ITEMS[i]['mass'])
+
+            def dfs(pos, curr_counts, curr_mass, mass_by_element):
+                # prune large overshoot
+                if curr_mass > MAX_TOTAL:
+                    return
+                if pos == len(combo_sorted):
+                    if curr_mass < MIN_TOTAL or curr_mass > MAX_TOTAL:
+                        return
+                    perc = compute_percentages(mass_by_element, curr_mass, elements)
+                    ok = True
+                    for el, (lo, hi) in COMPOSITION_BOUNDS.items():
+                        v = perc.get(el, 0.0)
+                        if v < lo - 1e-9 or v > hi + 1e-9:
+                            ok = False
+                            break
+                    if not ok:
+                        return
+                    # scarcity score: sum(cnt/available)
+                    scarcity = 0.0
+                    for idx, cnt in zip(combo_sorted, curr_counts):
+                        available = ITEMS[idx]['available']
+                        scarcity += (cnt / available) if available > 0 else float('inf')
+                    diff = abs(curr_mass - TARGET_MB)
+                    # heavily prefer overshoot if enabled
+                    if args.prefer_overshoot:
+                        if curr_mass >= TARGET_MB:
+                            score = diff * 0.5
+                        else:
+                            score = diff * 2.0
+                    else:
+                        score = diff
+                    best_solutions.append({
+                        'combo': combo_sorted.copy(),
+                        'counts': curr_counts.copy(),
+                        'total_mass': curr_mass,
+                        'percentages': perc,
+                        'diff': diff,
+                        'scarcity': scarcity,
+                        'score': score,
+                    })
+                    return
+
+                idx = combo_sorted[pos]
+                item = ITEMS[idx]
+                mass_per_item = item['mass']
+                available = item['available']
+                # max count by mass remaining
+                max_possible_by_mass = int((MAX_TOTAL - curr_mass) // mass_per_item) if mass_per_item > 0 else available
+                max_count = min(available, max_possible_by_mass)
+
+                # iterate counts (try larger first to encourage overshoot combination)
+                for cnt in range(max_count, -1, -1):
+                    new_mass = curr_mass + cnt * mass_per_item
+                    # update mass_by_element with composition fractions
+                    if cnt > 0 and item['comp']:
+                        for el, frac in item['comp'].items():
+                            mass_by_element[el] = mass_by_element.get(el, 0.0) + cnt * mass_per_item * frac
+                    curr_counts.append(cnt)
+                    dfs(pos + 1, curr_counts, new_mass, mass_by_element)
+                    curr_counts.pop()
+                    if cnt > 0 and item['comp']:
+                        for el, frac in item['comp'].items():
+                            mass_by_element[el] -= cnt * mass_per_item * frac
+
+            dfs(0, [], 0.0, {})
+
+    # sort by (score, scarcity)
+    best_solutions_sorted = sorted(best_solutions, key=lambda s: (s['score'], s['scarcity']))
+
+    if not best_solutions_sorted:
+        print(f"No solutions found within +/-{ALLOWANCE_MB} mb that satisfy composition bounds.")
         return
 
-    print(f"Found {len(sols)} valid combinations. Showing top 10:\n")
-    for sol in sols[:10]:
-        combo, counts, total, totals, diff = sol
-        pct = {m: totals[m]/total for m in totals}
-        item_str = ", ".join(f"{combo[i]['name']} x{counts[i]}" for i in range(len(combo)) if counts[i])
-        metals_str = " ".join(f"{m}: {pct[m]*100:.1f}%" for m in pct)
-        print(f"{item_str}\n → {total:.1f}mb total | {metals_str} | diff {diff:.1f}\n")
+    print(f"Found {len(best_solutions_sorted)} candidate(s). Showing top {min(args.top, len(best_solutions_sorted))}:\n")
+    for i, sol in enumerate(best_solutions_sorted[:args.top], 1):
+        print(f"Solution #{i}: total_mass = {sol['total_mass']:.1f} mb (diff {sol['diff']:.1f})  score={sol['score']:.3f}")
+        print(f"  scarcity score: {sol['scarcity']:.4f}")
+        print("  Breakdown:")
+        for idx, cnt in zip(sol['combo'], sol['counts']):
+            if cnt == 0:
+                continue
+            item = ITEMS[idx]
+            comp_str = ", ".join([f"{k}:{v:.2f}" for k, v in item['comp'].items()]) if item['comp'] else '[]'
+            print(f"    - {item['name']}: {cnt} x {item['mass']} mb = {cnt*item['mass']} mb  (comp: {comp_str}; available {item['available']})")
+        perc = sol['percentages']
+        perc_str = ", ".join([f"{el}: {perc.get(el,0.0)*100:.2f}%" for el in elements])
+        print(f"  Percentages: {perc_str}\n")
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
