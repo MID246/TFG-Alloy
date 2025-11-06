@@ -125,8 +125,12 @@ def main():
 
     elements = sorted(list({e for e in COMPOSITION_BOUNDS.keys()}))
 
-    # Build item index list
-    ITEMS = items
+    # Filter items to only those that contain at least one element in the recipe
+    filtered_items = [it for it in items if any(k in it.get('comp', {}) for k in COMPOSITION_BOUNDS.keys())]
+    if not filtered_items:
+        # If no items match the recipe elements, fall back to full list
+        filtered_items = items
+    ITEMS = filtered_items
     item_index = list(range(len(ITEMS)))
 
     best_solutions = []
@@ -137,10 +141,46 @@ def main():
             # order by mass desc for pruning
             combo_sorted = sorted(combo, key=lambda i: -ITEMS[i]['mass'])
 
+            # Precompute remaining mass and per-element max-available mass from each position
+            n = len(combo_sorted)
+            rem_mass_from = [0.0] * (n + 1)
+            rem_elem_from = [dict() for _ in range(n + 1)]
+            for i in range(n - 1, -1, -1):
+                idx_i = combo_sorted[i]
+                it = ITEMS[idx_i]
+                m_total = it['mass'] * it['available']
+                rem_mass_from[i] = rem_mass_from[i + 1] + m_total
+                # copy next dict then add this item's contributions
+                d = rem_elem_from[i + 1].copy()
+                for el, frac in it.get('comp', {}).items():
+                    d[el] = d.get(el, 0.0) + it['mass'] * it['available'] * frac
+                rem_elem_from[i] = d
+
             def dfs(pos, curr_counts, curr_mass, mass_by_element):
                 # prune large overshoot
                 if curr_mass > MAX_TOTAL:
                     return
+
+                # Prune if even using all remaining items we can't reach the minimum total mass
+                if curr_mass + rem_mass_from[pos] < MIN_TOTAL:
+                    return
+
+                # Prune by checking per-element achievable fractions using remaining max contributions.
+                # If even the maximum achievable fraction for an element is below its lower bound,
+                # or the minimum achievable fraction (if no further contributions) is above its upper bound,
+                # then it's impossible to satisfy composition bounds from this state.
+                max_possible_total = curr_mass + rem_mass_from[pos]
+                if max_possible_total <= 0.0:
+                    return
+                for el, (lo, hi) in COMPOSITION_BOUNDS.items():
+                    curr_elem = mass_by_element.get(el, 0.0)
+                    rem_elem_max = rem_elem_from[pos].get(el, 0.0)
+                    # maximum fraction achievable if all remaining contributing mass for this element is used
+                    max_fraction = (curr_elem + rem_elem_max) / max_possible_total
+                    # minimum fraction achievable (assume remaining contributes none for this element)
+                    min_fraction = curr_elem / max_possible_total
+                    if max_fraction + 1e-12 < lo or min_fraction - 1e-12 > hi:
+                        return
                 if pos == len(combo_sorted):
                     if curr_mass < MIN_TOTAL or curr_mass > MAX_TOTAL:
                         return
