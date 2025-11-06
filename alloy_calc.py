@@ -77,7 +77,7 @@ def main():
     parser.add_argument('--items-file', default='items.json', help='Path to items JSON (default: items.json)')
     parser.add_argument('--recipes-file', default='recipes.json', help='Path to recipes JSON (default: recipes.json)')
     parser.add_argument('-t', '--target', '--target-mb', dest='target', type=float, help='Target mass in mb')
-    parser.add_argument('--allowance', type=float, default=100.0, help='Allowed +/- mass tolerance (default: 100)')
+    parser.add_argument('--allowance', type=float, default=144.0, help='Allowed +/- mass tolerance (default: 100)')
     parser.add_argument('--max-types', type=int, default=4, help='Max distinct item types to use (default: 4)')
     parser.add_argument('--top', type=int, default=1, help='How many top solutions to print (default: 1)')
     # prefer_overshoot default True; provide --no-prefer-overshoot to disable

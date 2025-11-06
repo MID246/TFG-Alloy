@@ -37,10 +37,10 @@ python .\alloy_calc.py --no-prefer-overshoot
 
 - `--items-file PATH` — path to items JSON (default: `items.json`).
 - `--recipes-file PATH` — path to recipes JSON (default: `recipes.json`).
-- `-t, --target, --target-mb` — target mass in mb (default: `2016`).
-- `--allowance` — allowed ± mass tolerance (default: `100`).
+- `-t, --target, --target-mb` — target mass in mb.
+- `--allowance` — allowed ± mass tolerance (default: `144`).
 - `--max-types` — maximum distinct item types to use (default: `4`).
-- `--top` — how many top solutions to print (default: `2`).
+- `--top` — how many top solutions to print (default: `1`).
 - `--prefer-overshoot` / `--no-prefer-overshoot` — prefer overshooting (default: enabled).
 - `--add-item 'Name,mass,available,Element'` — add a single-element item inline (can repeat).
 - `--recipe 'Cu:0.50-0.65;Zn:0.20-0.30;Bi:0.10-0.20'` — inline recipe bounds.
