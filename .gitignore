@@ -1,0 +1,10 @@
+# Ignore local inventory and recipe files that may contain user-specific counts
+items.json
+recipes.json
+
+# Python defaults
+__pycache__/
+*.py[cod]
+
+# VSCode
+.vscode/

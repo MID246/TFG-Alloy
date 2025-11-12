@@ -141,6 +141,25 @@ python .\alloy_calc.py > results.txt
 - If Python reports a JSON parse error, check `items.json` / `recipes.json` for trailing commas or invalid syntax.
 - If no solutions are found, try widening `--allowance` or relaxing recipe bounds.
 
+## Templates and Git ignore
+
+The repository includes template files you can copy to create your own local `items.json` and `recipes.json` files. These files are intentionally ignored by Git so you can keep per-player counts. Basically, my usage won't leak into yours.
+
+Files provided:
+- `items.template.json` — example inventory structure. Copy to `items.json` and edit counts and masses for your setup.
+- `recipes.template.json` — example recipes. Copy to `recipes.json` and add or edit named recipes.
+
+To create your local files from the templates (PowerShell):
+
+```powershell
+Copy-Item .\items.template.json .\items.json -Force
+Copy-Item .\recipes.template.json .\recipes.json -Force
+```
+
+`.gitignore` is configured to ignore `items.json` and `recipes.json` so you won't accidentally commit your local inventory.
+
+If you'd like the example `items.json`/`recipes.json` to be tracked in Git instead, don't copy the templates into those filenames — instead edit the templates or commit renamed files.
+
 ## Next improvements
 
 - Add CSV export of top candidates.

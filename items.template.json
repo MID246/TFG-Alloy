@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Example Copper Ore",
+    "mass_mb": 100,
+    "available": 10,
+    "composition": { "Cu": 1.0 }
+  },
+  {
+    "name": "Example Zinc Ore",
+    "mass_mb": 90,
+    "available": 5,
+    "composition": { "Zn": 1.0 }
+  },
+  {
+    "name": "Example Bismuth Dust",
+    "mass_mb": 36,
+    "available": 3,
+    "composition": { "Bi": 1.0 }
+  }
+]
