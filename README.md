@@ -166,7 +166,5 @@ If you'd like the example `items.json`/`recipes.json` to be tracked in Git inste
 - Add a `--overshoot-weight` numeric option instead of the fixed multiplier.
 - Support multi-element `--add-item` with composition fractions.
 - Optionally add an ILP backend for exact optimization over larger inventories.
-
----
-
-If you'd like, I can implement any of the "Next improvements" now — tell me which one you want first.
+- Better inventory management/importing
+- Support for items without mb values (ex: Charcoal in Wrought Iron)
