@@ -141,20 +141,25 @@ def main():
             # order by mass desc for pruning
             combo_sorted = sorted(combo, key=lambda i: -ITEMS[i]['mass'])
 
-            # Precompute remaining mass and per-element max-available mass from each position
+            # Precompute remaining mass and list of remaining items from each position
             n = len(combo_sorted)
             rem_mass_from = [0.0] * (n + 1)
-            rem_elem_from = [dict() for _ in range(n + 1)]
+            rem_list_from = [None] * (n + 1)
+            rem_list_from[n] = []
             for i in range(n - 1, -1, -1):
                 idx_i = combo_sorted[i]
                 it = ITEMS[idx_i]
                 m_total = it['mass'] * it['available']
                 rem_mass_from[i] = rem_mass_from[i + 1] + m_total
-                # copy next dict then add this item's contributions
-                d = rem_elem_from[i + 1].copy()
-                for el, frac in it.get('comp', {}).items():
-                    d[el] = d.get(el, 0.0) + it['mass'] * it['available'] * frac
-                rem_elem_from[i] = d
+                # build list of remaining item descriptors for greedy bounds
+                lst = rem_list_from[i + 1].copy()
+                lst.insert(0, {
+                    'idx': idx_i,
+                    'mass': it['mass'],
+                    'available': it['available'],
+                    'comp': it.get('comp', {})
+                })
+                rem_list_from[i] = lst
 
             def dfs(pos, curr_counts, curr_mass, mass_by_element):
                 # prune large overshoot
@@ -165,20 +170,74 @@ def main():
                 if curr_mass + rem_mass_from[pos] < MIN_TOTAL:
                     return
 
-                # Prune by checking per-element achievable fractions using remaining max contributions.
-                # If even the maximum achievable fraction for an element is below its lower bound,
-                # or the minimum achievable fraction (if no further contributions) is above its upper bound,
-                # then it's impossible to satisfy composition bounds from this state.
-                max_possible_total = curr_mass + rem_mass_from[pos]
+                # Prune by checking optimistic per-element achievable fractions using a greedy fill
+                # We'll attempt to fill the remaining mass (up to MAX_TOTAL) with the highest-density
+                # contributors for each element to get a tight upper bound, and similarly fill with
+                # zero-density contributors for a lower bound.
+                max_possible_total = min(MAX_TOTAL, curr_mass + rem_mass_from[pos])
                 if max_possible_total <= 0.0:
                     return
+
+                mass_budget_total = max_possible_total - curr_mass
+
+                def greedy_max_add(el, budget):
+                    # greedily allocate budget to items with highest fraction for el
+                    remaining = budget
+                    added_elem = 0.0
+                    used_mass = 0.0
+                    # sort remaining items by density for el
+                    items_list = rem_list_from[pos]
+                    sorted_items = sorted(items_list, key=lambda x: x['comp'].get(el, 0.0), reverse=True)
+                    for it in sorted_items:
+                        frac = it['comp'].get(el, 0.0)
+                        if frac <= 0.0:
+                            continue
+                        mass_per = it['mass']
+                        max_units = it['available']
+                        # how many units can we take within remaining mass
+                        take = min(max_units, int(remaining // mass_per))
+                        if take <= 0:
+                            continue
+                        take_mass = take * mass_per
+                        added_elem += take_mass * frac
+                        used_mass += take_mass
+                        remaining -= take_mass
+                        if remaining < 1e-9:
+                            break
+                    return added_elem, used_mass
+
+                def greedy_min_possible_fraction(el, budget):
+                    # allocate as much of budget as possible to items with zero (or minimal) fraction
+                    remaining = budget
+                    used_mass = 0.0
+                    items_list = rem_list_from[pos]
+                    sorted_items = sorted(items_list, key=lambda x: x['comp'].get(el, 0.0))
+                    for it in sorted_items:
+                        frac = it['comp'].get(el, 0.0)
+                        if frac > 0.0:
+                            continue
+                        mass_per = it['mass']
+                        max_units = it['available']
+                        take = min(max_units, int(remaining // mass_per))
+                        if take <= 0:
+                            continue
+                        take_mass = take * mass_per
+                        used_mass += take_mass
+                        remaining -= take_mass
+                        if remaining < 1e-9:
+                            break
+                    denom = curr_mass + used_mass
+                    if denom <= 0.0:
+                        return 0.0
+                    return mass_by_element.get(el, 0.0) / denom
+
                 for el, (lo, hi) in COMPOSITION_BOUNDS.items():
                     curr_elem = mass_by_element.get(el, 0.0)
-                    rem_elem_max = rem_elem_from[pos].get(el, 0.0)
-                    # maximum fraction achievable if all remaining contributing mass for this element is used
-                    max_fraction = (curr_elem + rem_elem_max) / max_possible_total
-                    # minimum fraction achievable (assume remaining contributes none for this element)
-                    min_fraction = curr_elem / max_possible_total
+                    # optimistic add for el
+                    added_elem, used_mass = greedy_max_add(el, mass_budget_total)
+                    max_fraction = (curr_elem + added_elem) / (curr_mass + used_mass) if (curr_mass + used_mass) > 0 else 0.0
+                    # pessimistic min fraction by filling mass with zero-el items
+                    min_fraction = greedy_min_possible_fraction(el, mass_budget_total)
                     if max_fraction + 1e-12 < lo or min_fraction - 1e-12 > hi:
                         return
                 if pos == len(combo_sorted):
